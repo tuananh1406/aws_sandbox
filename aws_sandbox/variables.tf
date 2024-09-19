@@ -1,4 +1,5 @@
 variable "sandbox_owner_name" {}
+variable "sandbox_owner_arn" {}
 variable "sandbox_user_name" {}
 variable "inbound_vpn_cidr" {}
 variable "vpc_cidr" {}

@@ -3,10 +3,39 @@ resource "aws_iam_user" "sandbox_user" {
   permissions_boundary = aws_iam_policy.sandbox_user_permissions_boundary.arn
 }
 
+# resource "aws_iam_user_login_profile" "sandbox_user_login_profile" {
+#   user     = aws_iam_user.sandbox_user.name
+#   pgp_key = "keybase:admin"
+# }
+#
+# output "password" {
+#   value = aws_iam_user_login_profile.sandbox_user_login_profile.encrypted_password
+# }
+
+resource "pgp_key" "user_login_key" {
+  name    = aws_iam_user.sandbox_user.name
+      email = "testing@gmail.com"
+  comment = "PGP Key for ${aws_iam_user.sandbox_user.name}"
+}
+
 resource "aws_iam_policy" "sandbox_user_permissions_boundary" {
   name        = "sandbox_user_permissions_boundary"
   description = "Permissions boundary for sandbox user"
   policy      = data.aws_iam_policy_document.sandbox_user_permissions_boundary_document.json
+}
+
+resource "aws_iam_user_login_profile" "user_login" {
+  user     = aws_iam_user.sandbox_user.name
+  pgp_key                 = pgp_key.user_login_key.public_key_base64
+  password_reset_required = false
+
+  depends_on = [aws_iam_user.sandbox_user, pgp_key.user_login_key]
+}
+
+data "pgp_decrypt" "user_password_decrypt" {
+  ciphertext          = aws_iam_user_login_profile.user_login.encrypted_password
+  ciphertext_encoding = "base64"
+  private_key         = pgp_key.user_login_key.private_key
 }
 
 data "aws_iam_policy_document" "sandbox_user_permissions_boundary_document" {
@@ -49,8 +78,9 @@ data "aws_iam_policy_document" "sandbox_user_permissions_boundary_document" {
       "arn:aws:iam::${local.account_id}:policy/sandbox_user_permissions_boundary", #Hack to remove circular dependency
       "arn:aws:iam::${local.account_id}:role/${var.sandbox_user_name}",
       aws_iam_policy.sandbox_user_policy.arn,
-      aws_iam_policy.sandbox_owner_policy.arn,
-      aws_iam_user.sandbox_owner.arn
+      # aws_iam_policy.sandbox_owner_policy.arn,
+      # aws_iam_user.sandbox_owner.arn
+      var.sandbox_owner_arn
     ]
   }
   statement {
@@ -104,3 +134,13 @@ resource "aws_iam_user_policy_attachment" "sandbox_user_policy_attachment" {
   user       = aws_iam_user.sandbox_user.name
   policy_arn = aws_iam_policy.sandbox_user_policy.arn
 }
+
+output "credentials" {
+  value = {
+      # "key"      = aws_iam_access_key.user_access_key.id
+      # "secret"   = aws_iam_access_key.user_access_key.secret
+      "password" = data.pgp_decrypt.user_password_decrypt.plaintext
+  }
+  sensitive = true
+}
+
